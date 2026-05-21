@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Web GIS Combined Dashboard</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <style>
+        body { margin: 0; padding: 0; font-family: Arial, sans-serif; }
+        #map { width: 100vw; height: 100vh; }
+        
+        /* Dashboard Control Box */
+        .dashboard-panel {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            z-index: 1000;
+            background: rgba(255, 255, 255, 0.95);
+            padding: 15px;
+            border-radius: 8px;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.3);
+            max-width: 300px;
+        }
+        .dashboard-panel h2 { margin: 0 0 5px 0; font-size: 16px; color: #111; }
+        .dashboard-panel p { margin: 0 0 10px 0; font-size: 12px; color: #555; }
+        
+        /* Legends styling */
+        .legend-section {
+            margin-top: 10px;
+            border-top: 1px solid #ccc;
+            padding-top: 8px;
+            font-size: 12px;
+        }
+        .legend-item { display: flex; align-items: center; margin-bottom: 4px; }
+        .legend-color { width: 16px; height: 16px; margin-right: 8px; border-radius: 3px; opacity: 0.8; }
+    </style>
+</head>
+<body>
+
+    <div class="dashboard-panel">
+        <h2>SGE4165 Web Mapping Dashboard</h2>
+        <p>Continuous Assessment Test 2 Tasks combined into a single operational interface.</p>
+        
+        <div>
+            <label><input type="checkbox" id="toggle-parcels" checked> <b>Q1: Biryogo Parcels</b></label>
+        </div>
+        <div>
+            <label><input type="checkbox" id="toggle-heatmap" checked> <b>Q2: Kigali Population Heatmap</b></label>
+        </div>
+
+        <div class="legend-section">
+            <strong>Biryogo Land Use</strong>
+            <div class="legend-item"><div class="legend-color" style="background: Brown;"></div> Residential</div>
+            <div class="legend-item"><div class="legend-color" style="background: Green;"></div> Agricultural</div>
+            <div class="legend-item"><div class="legend-color" style="background: Red;"></div> Commercial</div>
+            <div class="legend-item"><div class="legend-color" style="background: Gray;"></div> Other Land Uses</div>
+        </div>
+        <div class="legend-section">
+            <strong>Population Concentration Scale</strong>
+            <div class="legend-item">
+                <div class="legend-color" style="background: linear-gradient(to right, blue, cyan, lime, yellow, red); width: 100px;"></div>
+                <span style="margin-left: 5px;">Low → Peak Density</span>
+            </div>
+        </div>
+    </div>
+
+    <div id="map"></div>
+
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.heat/0.2.0/leaflet-heat.js"></script>
+    
+    <script>
+        // 1. Initialize Map view centered broadly on Kigali City
+        var map = L.map('map').setView([-1.954, 30.065], 13);
+
+        // 2. Add Dark Theme Basemap layer to maximize visual clarity for the dynamic heat gradient
+        var baseMap = L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png', {
+            attribution: '&copy; OpenStreetMap contributors &copy; CARTO'
+        }).addTo(map);
+
+        // ==========================================
+        // TASK 2: POPULATION HEATMAP INITIALIZATION
+        // ==========================================
+        // Array tracks 35 Sector Centroids [lat, lng, intensity calculated as (population / area)]
+        var heatData = [
+            [-1.9585, 30.0574, 1500.5], // Example: Nyarugenge Centroid
+            [-1.9351, 30.0824, 1200.2], // Example: Kacyiru Centroid
+            [-1.9612, 30.1124, 950.8],  // Example: Remera Centroid
+            [-2.0081, 30.0911, 450.3],  // Example: Kicukiro Centroid
+            [-1.9420, 30.0210, 310.1]   // Example: Kimisagara Centroid
+            // Note: Fill out remaining entries using your target 35 Sector attributes table
+        ];
+
+        var heatmapLayer = L.heatLayer(heatData, {
+            radius: 40,
+            blur: 25,
+            maxZoom: 15,
+            max: 2000.0,
+            gradient: { 0.4: 'blue', 0.6: 'cyan', 0.7: 'lime', 0.8: 'yellow', 1.0: 'red' }
+        }).addTo(map);
+
+        // ==========================================
+        // TASK 1: CADASTRAL DATA LAYER PARSING
+        // ==========================================
+        var parcelLayer;
+
+        // Custom function styling parcels programmatically by looking up attributes
+        function styleParcelFeatures(feature) {
+            var useAttr = feature.properties.Land_Use || feature.properties.USE || '';
+            var landUse = useAttr.toString().toLowerCase();
+            
+            if (landUse.includes('res') || landUse.includes('ubuturo')) {
+                return { fillColor: "Brown", color: "#222", weight: 1, fillOpacity: 0.65 };
+            } else if (landUse.includes('agri') || landUse.includes('ubuhinzi')) {
+                return { fillColor: "Green", color: "#222", weight: 1, fillOpacity: 0.65 };
+            } else if (landUse.includes('comm') || landUse.includes('uburuzi')) {
+                return { fillColor: "Red", color: "#222", weight: 1, fillOpacity: 0.65 };
+            } else {
+                return { fillColor: "Gray", color: "#444", weight: 1, fillOpacity: 0.45 };
+            }
+        }
+
+        // Feature interactive event hooks for parsing land titles upon map clicks
+        function configureInteractivePopups(feature, layer) {
+            if (feature.properties) {
+                var upi = feature.properties.UPI || "No UPI Field Detected";
+                var landUse = feature.properties.Land_Use || feature.properties.USE || "Not Specified";
+                var rawArea = feature.properties.Area || feature.properties.SHAPE_Area || "N/A";
+                
+                var areaDisplay = (typeof rawArea === 'number') ? rawArea.toFixed(2) + " sqm" : rawArea;
+
+                var popupLayout = "<strong>Cadastral Record Info</strong><hr>" +
+                                  "<b>UPI Number:</b> " + upi + "<br>" +
+                                  "<b>Land Designation:</b> " + landUse + "<br>" +
+                                  "<b>Calculated Footprint:</b> " + areaDisplay;
+                
+                layer.bindPopup(popupLayout);
+            }
+        }
+
+        // Fetch command targeted at loading your generated 'KGL_CITY_012_Ex_FeaturesToJSO1.geojson' file
+        fetch('KGL_CITY_012_Ex_FeaturesToJSO1.geojson')
+            .then(function(response) { 
+                if (!response.ok) {
+                    throw new Error("Local HTTP file access failed. Check if server environment is operational.");
+                }
+                return response.json(); 
+            })
+            .then(function(geojsonData) {
+                parcelLayer = L.geoJSON(geojsonData, {
+                    style: styleParcelFeatures,
+                    onEachFeature: configureInteractivePopups
+                }).addTo(map);
+                
+                // Automatically adjust the view context to frame your imported Biryogo parcels bounding box
+                map.fitBounds(parcelLayer.getBounds());
+            })
+            .catch(function(err) { 
+                console.error("GeoJSON Layer Processing Terminal Fault:", err); 
+            });
+
+        // ==========================================
+        // INTERACTIVE LAYER SWITCH TOGGLE MANAGEMENT
+        // ==========================================
+        document.getElementById('toggle-parcels').addEventListener('change', function(e) {
+            if (parcelLayer) {
+                if (e.target.checked) { map.addLayer(parcelLayer); } else { map.removeLayer(parcelLayer); }
+            }
+        });
+
+        document.getElementById('toggle-heatmap').addEventListener('change', function(e) {
+            if (heatmapLayer) {
+                if (e.target.checked) { map.addLayer(heatmapLayer); } else { map.removeLayer(heatmapLayer); }
+            }
+        });
+    </script>
+</body>
+</html>
